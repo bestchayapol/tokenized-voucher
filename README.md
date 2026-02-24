@@ -178,3 +178,54 @@ docker compose down -v
 docker compose logs -f db
 docker compose logs -f backend
 ```
+
+## Day 3 — Models + Alembic Migration (Run inside backend container)
+
+Day 3 goal: define database schema using **SQLAlchemy models** and generate/apply **Alembic migrations** inside the running backend container.
+
+### :white_check_mark: Done (Day 3 checklist)
+- [x] Added SQLAlchemy Base (DeclarativeBase)
+- [x] Created models: `users`, `vouchers`, `balances`, `ledger_events`
+- [x] Initialized Alembic in backend container
+- [x] Configured `alembic/env.py` to:
+  - read `DATABASE_URL` from environment
+  - use `target_metadata = Base.metadata`
+  - import models before autogenerate
+- [x] Generated migration script with `--autogenerate`
+- [x] Applied migration with `upgrade head`
+- [x] Verified tables exist in PostgreSQL
+
+> Note: In SQLAlchemy Declarative API, the attribute name `metadata` is reserved.  
+> The `ledger_events` model uses a safe attribute name (e.g. `event_metadata`) mapped to DB column `"metadata"`.
+
+---
+
+### Commands (run in PowerShell)
+
+> `docker compose exec` runs a command inside a running service container.  
+> Reference: Docker Compose exec docs.
+
+1) Start containers (if not running):
+```powershell
+docker compose up -d
+```
+
+### Create migration script (autogenerate):
+```powershell
+docker compose exec backend alembic revision --autogenerate -m "init tables"
+```
+
+### Apply migration:
+```powershell
+docker compose exec backend alembic upgrade head
+```
+
+### Verify tables in Postgres:
+```docker compose exec db psql -U app -d voucherdb -c "\dt"```
+
+### Expected tables (example):
+    - users
+    - vouchers
+    - balances
+    - ledger_events
+    - alembic_version
