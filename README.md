@@ -224,8 +224,11 @@ docker compose exec backend alembic upgrade head
 ```docker compose exec db psql -U app -d voucherdb -c "\dt"```
 
 ### Expected tables (example):
-    - users
-    - vouchers
-    - balances
-    - ledger_events
-    - alembic_version
+  ```   Schema |      Name       | Type  | Owner
+--------+-----------------+-------+-------
+ public | alembic_version | table | app
+ public | balances        | table | app
+ public | ledger_events   | table | app
+ public | users           | table | app
+ public | vouchers        | table | app
+(5 rows) ```
