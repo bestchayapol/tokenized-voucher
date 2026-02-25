@@ -224,16 +224,6 @@ docker compose exec backend alembic upgrade head
 ### Verify tables in Postgres:
 ```docker compose exec db psql -U app -d voucherdb -c "\dt"```
 
-### Expected tables (example):
-  ```   Schema |      Name       | Type  | Owner
---------+-----------------+-------+-------
- public | alembic_version | table | app
- public | balances        | table | app
- public | ledger_events   | table | app
- public | users           | table | app
- public | vouchers        | table | app
-(5 rows) ```
-
 ## Day 4 — Auth (Register / Login) + JWT + Roles (Swagger Ready)
 
 Day 4 goal: implement **authentication** (register/login) with **JWT bearer tokens**, and support 3 roles:
@@ -270,4 +260,115 @@ Make sure these packages exist in `backend/requirements.txt`:
 
 After updating requirements:
 ```powershell
-docker compose up --build -d```
+docker compose up --build -d
+```
+## Environment (.env)
+
+Add these to backend/.env:
+
+```env
+JWT_SECRET=<your_random_secret>
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+```
+Generate a secret
+```powershell
+openssl rand -hex 32
+```
+> Do NOT commit .env to GitHub.   
+
+## API Endpoints
+### 1) Register (Public)
+
+POST /auth/register
+
+Request body example:
+```json
+{
+  "email": "johndoe@hotmail.com",
+  "password": "secret",
+  "role": "user"
+}
+```
+### 2) Login (Public)
+
+OAuth2 password flow uses form-data fields:
+
+        username (we use email here)
+        password
+
+In Swagger, click Try it out and fill:
+
+        username: johndoe@hotmail.com
+        password: secret
+
+Response:
+```json
+{
+  "access_token": "<JWT_TOKEN>",
+  "token_type": "bearer"
+}
+```
+### 3) Me (Protected)
+
+GET /auth/me
+
+Requires Bearer token.
+
+## Swagger Demo (How to test quickly)
+1.    Open Swagger:
+  
+           http://localhost:8000/docs
+
+3.    Register 3 accounts:
+
+          issuer: role="issuer"
+          user: role="user"
+          merchant: role="merchant"
+
+3.    Login as any user:
+
+          POST /auth/login
+          Copy access_token
+
+4.    Click Authorize (top-right in Swagger):
+
+          Paste:
+          Bearer <access_token>
+
+5.    Call protected endpoint:
+
+          GET /auth/me → should return your user info
+
+## Notes/Common Issues
+
+### A) 401 Unauthorized on /auth/register
+
+Register should be public. If it returns 401:
+    •    Make sure /auth/register is NOT protected by Depends(get_current_user)
+    •    Avoid setting router-wide dependencies that require auth.
+
+### B) 500 Internal Server Error on register (DB constraint)
+
+If DB has extra NOT NULL columns (e.g., username), register may fail.
+Fix by aligning the model/schema and applying migrations (Day 3).
+
+### C) bcrypt password length limit (72 bytes)
+
+bcrypt is designed for passwords up to 72 bytes.
+For this project, keep passwords reasonably short (or validate max length).
+
+## Useful Commands
+
+View backend logs:
+```powershell
+docker compose logs -f backend --tail=200
+```
+View DB logs:
+```powershell
+docker compose logs -f db --tail=200
+```
+Restart all:
+```powershell
+docker compose down
+docker compose up --build -d
+```
