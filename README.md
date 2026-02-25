@@ -216,6 +216,7 @@ docker compose exec backend alembic revision --autogenerate -m "init tables"
 ```
 
 ### Apply migration:
+
 ```powershell
 docker compose exec backend alembic upgrade head
 ```
@@ -232,3 +233,41 @@ docker compose exec backend alembic upgrade head
  public | users           | table | app
  public | vouchers        | table | app
 (5 rows) ```
+
+## Day 4 — Auth (Register / Login) + JWT + Roles (Swagger Ready)
+
+Day 4 goal: implement **authentication** (register/login) with **JWT bearer tokens**, and support 3 roles:
+- `issuer`
+- `user`
+- `merchant`
+
+This enables:
+- Register users
+- Login to receive `access_token`
+- Use Swagger **Authorize** to call protected endpoints
+- Prepare role-based access for Day 5 (e.g., issuer-only actions)
+
+---
+
+###  What’s done (Day 4 checklist)
+- [x] POST `/auth/register` create user (email/password/role)
+- [x] POST `/auth/login` returns JWT access token
+- [x] GET `/auth/me` returns current user (requires Bearer token)
+- [x] `get_current_user()` to decode JWT and load user from DB
+- [x] `require_role()` helper for role-based access (used in later days)
+- [x] Swagger Authorize flow works
+
+---
+
+## Requirements (Auth)
+
+Make sure these packages exist in `backend/requirements.txt`:
+- `python-jose[cryptography]` (JWT)
+- `passlib[bcrypt]` (password hashing)
+- `python-multipart` (required for OAuth2 password-form login)
+
+> If `python-multipart` is missing, `/auth/login` will fail because the password-flow expects **form-data**.
+
+After updating requirements:
+```powershell
+docker compose up --build -d```
