@@ -16,19 +16,22 @@ def get_db():
         db.close()
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> User:
+    token: str = Depends(oauth2_scheme)) -> User:
     try:
         payload = decode_token(token)
         user_id = int(payload.get("sub"))
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-    user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return user
+    # ใช้ session ของตัวเอง เพิ่มไม่ไปเปิด transaction ใน session ของ endpoint
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        return user
+    finally:
+        db.close()
 
 def require_role(*roles: str):
     def checker(user: User = Depends(get_current_user)) -> User:

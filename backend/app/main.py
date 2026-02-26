@@ -4,10 +4,14 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_db
 from app.routers.auth import router as auth_router
+from app.routers.vouchers import router as voucher_router
+from app.routers.ledger import router as ledger_router
 
 app = FastAPI(title="Tokenized Voucher API")
 
 app.include_router(auth_router)
+app.include_router(voucher_router)
+app.include_router(ledger_router)
 
 @app.get("/health")
 def health():
