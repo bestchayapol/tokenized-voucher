@@ -372,3 +372,95 @@ Restart all:
 docker compose down
 docker compose up --build -d
 ```
+     
+## Day 5 — Voucher + ISSUE / TRANSFER / REDEEM + Ledger (Swagger Demo)
+
+Day 5 goal: implement core token flows for **Tokenized Voucher**:
+- Create Voucher (issuer-only)
+- Issue (issuer → user)
+- Transfer (user → user)
+- Redeem (user → merchant)
+- Ledger (audit trail for every transaction)
+- Idempotency (prevent duplicate transaction using `ref_id`)
+
+> Key idea: every transaction must update balances + write ledger event atomically (in one DB transaction).
+
+---
+
+### ✅ Done (Day 5 checklist)
+- [x] POST `/vouchers` (issuer-only) create voucher
+- [x] GET `/vouchers` list vouchers (auth required)
+- [x] GET `/vouchers/{id}/balance/me` check own balance
+- [x] POST `/vouchers/{id}/issue` (issuer → user)
+- [x] POST `/vouchers/{id}/transfer` (user → user)
+- [x] POST `/vouchers/{id}/redeem` (user → merchant)
+- [x] GET `/ledger/vouchers/{id}?limit=&offset=` list ledger events
+- [x] `ref_id` idempotency (duplicate → 409)
+
+---
+
+## Swagger Step-by-Step Demo (Day 5)
+
+> Open Swagger:
+- If compose maps `18000:8000` → http://localhost:18000/docs
+- If compose maps `8000:8000` → http://localhost:8000/docs
+
+### 1) Register 3 roles (one-time)
+POST `/auth/register`:
+- issuer: role="issuer"
+- user1: role="user"
+- merchant: role="merchant"
+
+### 2) Login issuer + Authorize
+POST `/auth/login` (form-data):
+- username = issuer email
+- password = secret
+
+Copy `access_token` → Swagger **Authorize**:
+`Bearer <issuer_token>`
+
+Confirm: GET `/auth/me` returns role `"issuer"`.
+
+### 3) Create Voucher (issuer-only)
+POST `/vouchers`
+```json
+{ "code": "FOOD-2026", "name": "Food Voucher 2026" }
+```
+Save voucher_id from response.
+
+### 4) Issue to user1 (issuer -> user)
+POST `/vouchers/{voucher_id}/issue`
+```json
+{ "to_user_id": <user1_id>, "amount": 100, "ref_id": "<new-uuid>" }
+```
+
+### 5) Login user1 + Authorize (switch token)
+POST `/auth/login` for user1 -> Authorize with user1 token
+Confirm: GET `/auth/me` role "user".
+
+### 6) Check balance (user1)
+
+GET `/vouchers/{voucher_id}/balance/me` → should show balance 100
+
+### 7) Redeem to merchant (user -> merchant)
+
+POST `/vouchers{voucher_id}/redeem
+
+```json
+{ "merchant_user_id": <merchant_id>, "amount": 50, "ref_id": "<new-uuid>" }
+```
+
+### 8) Ledger (audit trail)
+
+GET `/ledger/vouchers/{voucher_id}?limit=20&offset=0`
+You should see events like ISSUE and REDEEM (and TRANSFER if you tested it).
+
+### 9) Idempotency test
+
+Send the same request again with the same ref_id → should return 409 Conflict.
+
+### Useful commands
+```powershell
+docker compose logs -f backend --tail=200
+docker compose exec db psql -U app -d voucherdb -c "\dt"
+```
