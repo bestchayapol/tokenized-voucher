@@ -536,8 +536,8 @@ ref_id is validated as UUID by schema, so bad formats will fail early (422).
 4. Test idempotency:
     • Send the same redeem request again with the same ref_id
     • Expected: 409 Conflict
-Quick DB checks (optional)
 
+Quick DB checks (optional)
 List balances:
 ```docker
 docker compose exec db psql -U app -d voucherdb -c "select user_id,voucher_id,balance from balances order by user_id,voucher_id;"
