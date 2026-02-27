@@ -1,4 +1,4 @@
-# Tokenized Voucher (Mini Tokenization) 
+455# Tokenized Voucher (Mini Tokenization) 
 Mini Project for applicant in full stack at BOT
 
 ## Day 1 — FastAPI (Local Dev / Windows PowerShell)
@@ -464,3 +464,89 @@ Send the same request again with the same ref_id → should return 409 Conflict.
 docker compose logs -f backend --tail=200
 docker compose exec db psql -U app -d voucherdb -c "\dt"
 ```
+
+## Day 6 — Ledger API + Pagination + Stronger Idempotency
+
+Day 6 goal: make the system more **production-like** by improving:
+- **Ledger API** (pagination with `limit/offset`)
+- **Idempotency** (duplicate `ref_id` returns **409**, not 500)
+- **Validation** (use UUID for `ref_id`)
+
+---
+
+### :white_check_mark: Done (Day 6 checklist)
+- [x] Ledger endpoint supports pagination:
+  - GET `/ledger/vouchers/{voucher_id}?limit=20&offset=0`
+  - limit has min/max guard (e.g. 1–100)
+- [x] `ref_id` is validated as UUID at request schema level
+- [x] Idempotency is stronger:
+  - duplicate `ref_id` returns **409 Conflict**
+  - handled safely even under race conditions (catch DB `IntegrityError`)
+- [x] Verified in Swagger:
+  - ledger returns correct events
+  - same `ref_id` cannot be processed twice
+
+---
+
+## How to run
+```powershell
+docker compose up --build -d
+```
+Swagger:
+    • http://localhost:8000/docs
+    (or use your mapped port เช่น http://localhost:18000/docs) 
+Ledger API
+
+Endpoint
+
+GET /ledger/vouchers/{voucher_id}
+
+Query params
+    •    limit (default 20, min 1, max 100)
+    •    offset (default 0)
+
+Example:
+```
+GET /ledger/vouchers/1?limit=2&offset=0
+GET /ledger/vouchers/1?limit=2&offset=2
+```
+Expected response fields (per event):
+    •    event_type (ISSUE/TRANSFER/REDEEM)
+    •    from_user_id, to_user_id
+    •    amount
+    •    ref_id
+    •    created_at
+### Idempotency rule (ref_id)
+All state-changing endpoints must include ref_id:
+    •    POST /vouchers/{id}/issue
+    •    POST /vouchers/{id}/transfer
+    •    POST /vouchers/{id}/redeem
+
+Rules:
+    
+1. If ref_id has never been used → process normally (200)
+2. If ref_id is reused → return 409 Conflict (no double-spend)
+
+ref_id is validated as UUID by schema, so bad formats will fail early (422).
+### Swagger Demo (Day 6)
+1. Login as issuer → create voucher → issue to user (use a new UUID for ref_id)
+2. Login as user → redeem to merchant (use a new UUID for ref_id)
+3. Check ledger:
+    • GET /ledger/vouchers/{voucher_id}?limit=20&offset=0
+4. Test idempotency:
+    • Send the same redeem request again with the same ref_id
+    • Expected: 409 Conflict
+Quick DB checks (optional)
+
+List balances:
+```docker
+docker compose exec db psql -U app -d voucherdb -c "select user_id,voucher_id,balance from balances order by user_id,voucher_id;"
+```
+Latest ledger events:
+```docker
+docker compose exec db psql -U app -d voucherdb -c "select id,event_type,voucher_id,from_user_id,to_user_id,amount,ref_id,created_at from ledger_events order by id desc limit 20;"
+```
+Backend logs:
+```docker
+docker compose logs -f backend --tail=200
+ ```
