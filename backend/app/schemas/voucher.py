@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from uuid import UUID
 
 class CreateVoucherRequest(BaseModel):
     code: str = Field(min_length=1, max_length=50)
@@ -17,4 +18,4 @@ class TxRequest(BaseModel):
     merchant_user_id: int | None = None
     
     amount: int = Field(gt=0)   # > 0
-    ref_id: str = Field(min_length=1, max_length=64)
+    ref_id: UUID    # validate format

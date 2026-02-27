@@ -1,11 +1,16 @@
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.models.user import User
 from app.models.voucher import Voucher, Balance
 from app.models.ledger import LedgerEvent
 
+def _ensure_clean_txn(db: Session) -> None:
+    if db.in_transaction():
+        db.rollback()  # rollback any open transaction to ensure clean state
+    
 def _ensure_voucher_exists(db: Session, voucher_id: int) -> None:
     if not db.get(Voucher, voucher_id):
         raise HTTPException(status_code=404, detail="voucher not found")
@@ -41,24 +46,33 @@ def issue(db: Session, issuer: User, voucher_id: int, to_user_id: int, amount: i
     _ensure_voucher_exists(db, voucher_id)
     _get_user(db, to_user_id)
     
-    # Transaction block: balance update + ledger insert must be atomic
-    with db.begin():
-        _ensure_ref_id_ununsed(db, ref_id)
-        
-        bal = _get_or_create_balance(db, to_user_id, voucher_id)
-        bal.balance += amount
-        
-        db.add(
-            LedgerEvent(
-                event_type="ISSUE",
-                voucher_id=voucher_id,
-                from_user_id=None,
-                to_user_id=to_user_id,
-                amount=amount,
-                ref_id=ref_id,
-                event_metadata={"by": issuer.id},
+    ref_id_str = str(ref_id)  # convert UUID to string
+    
+    _ensure_clean_txn(db)  # ensure no open transaction before starting
+    
+    try:
+         # Transaction block: balance update + ledger insert must be atomic
+        with db.begin():
+            _ensure_ref_id_ununsed(db, ref_id_str)
+            
+            bal = _get_or_create_balance(db, to_user_id, voucher_id)
+            bal.balance += amount
+            
+            db.add(
+                LedgerEvent(
+                    event_type="ISSUE",
+                    voucher_id=voucher_id,
+                    from_user_id=None,
+                    to_user_id=to_user_id,
+                    amount=amount,
+                    ref_id=ref_id_str,
+                    event_metadata={"by": issuer.id},
+                )
             )
-        )
+    except IntegrityError:
+        # ถ้า ref_id ชน unique contraint (race) ให้ คืน 409 แทน 500
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="duplicate ref_id")
 
 def transfer(db: Session, sender: User, voucher_id: int, to_user_id: int, amount: int, ref_id: str) -> None:
     if sender.role != "user":
@@ -69,29 +83,37 @@ def transfer(db: Session, sender: User, voucher_id: int, to_user_id: int, amount
     _ensure_voucher_exists(db, voucher_id)
     _get_user(db, to_user_id)
     
-    with db.begin():
-        _ensure_ref_id_ununsed(db, ref_id)
-        
-        from_bal = _get_or_create_balance(db, sender.id, voucher_id)
-        if from_bal.balance < amount:
-            raise HTTPException(status_code=400, detail="insufficient balance")
-        
-        to_bal = _get_or_create_balance(db, to_user_id, voucher_id)
-        
-        from_bal.balance -= amount
-        to_bal.balance += amount
-        
-        db.add(
-            LedgerEvent(
-                event_type="TRANSFER",
-                voucher_id=voucher_id,
-                from_user_id=sender.id,
-                to_user_id=to_user_id,
-                amount=amount,
-                ref_id=ref_id,
+    ref_id_str = str(ref_id)  # convert UUID to string
+    
+    _ensure_clean_txn(db)  # ensure no open transaction before starting
+    
+    try:
+        with db.begin():
+            _ensure_ref_id_ununsed(db, ref_id_str)
+            
+            from_bal = _get_or_create_balance(db, sender.id, voucher_id)
+            if from_bal.balance < amount:
+                raise HTTPException(status_code=400, detail="insufficient balance")
+            
+            to_bal = _get_or_create_balance(db, to_user_id, voucher_id)
+            
+            from_bal.balance -= amount
+            to_bal.balance += amount
+            
+            db.add(
+                LedgerEvent(
+                    event_type="TRANSFER",
+                    voucher_id=voucher_id,
+                    from_user_id=sender.id,
+                    to_user_id=to_user_id,
+                    amount=amount,
+                    ref_id=ref_id_str,
                 event_metadata=None,
             )
         )
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="duplicate ref_id")
 
 def redeem(db: Session, user: User, voucher_id: int, merchant_user_id: int, amount: int, ref_id: str) -> None:
     if user.role != "user":
@@ -104,26 +126,34 @@ def redeem(db: Session, user: User, voucher_id: int, merchant_user_id: int, amou
     if merchant.role != "merchant":
         raise HTTPException(status_code=400, detail="target user is not a merchant")
     
-    with db.begin():
-        _ensure_ref_id_ununsed(db, ref_id)
+    ref_id_str = str(ref_id)  # convert UUID to string
+    
+    _ensure_clean_txn(db)  # ensure no open transaction before starting
+    
+    try:
+        with db.begin():
+            _ensure_ref_id_ununsed(db, ref_id_str)
+            
+            user_bal = _get_or_create_balance(db, user.id, voucher_id)
+            if user_bal.balance < amount:
+                raise HTTPException(status_code=400, detail="insufficient balance")
         
-        user_bal = _get_or_create_balance(db, user.id, voucher_id)
-        if user_bal.balance < amount:
-            raise HTTPException(status_code=400, detail="insufficient balance")
-        
-        merchant_bal = _get_or_create_balance(db, merchant_user_id, voucher_id)
-        
-        user_bal.balance -= amount
-        merchant_bal.balance += amount
-        
-        db.add(
-            LedgerEvent(
-                event_type="REDEEM",
-                voucher_id=voucher_id,
-                from_user_id=user.id,
-                to_user_id=merchant_user_id,
-                amount=amount,
-                ref_id=ref_id,
-                event_metadata={"merchant": merchant_user_id},
+            merchant_bal = _get_or_create_balance(db, merchant_user_id, voucher_id)
+            
+            user_bal.balance -= amount
+            merchant_bal.balance += amount
+            
+            db.add(
+                LedgerEvent(
+                    event_type="REDEEM",
+                    voucher_id=voucher_id,
+                    from_user_id=user.id,
+                    to_user_id=merchant_user_id,
+                    amount=amount,
+                    ref_id=ref_id_str,
+                    event_metadata={"merchant": merchant_user_id},
+                )
             )
-        )
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="duplicate ref_id")

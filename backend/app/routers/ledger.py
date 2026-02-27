@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -9,11 +9,13 @@ from app.core.deps import get_db, get_current_user
 
 router = APIRouter(prefix="/ledger", tags=["ledger"])
 
+MAX_LIMIT = 100
+
 @router.get("/vouchers/{voucher_id}", response_model=list[LedgerEventResponse])
 def voucher_ledger(
     voucher_id: int,
-    limit: int = 20,
-    offset: int = 0,    
+    limit: int = Query(20, ge=1, le=MAX_LIMIT),
+    offset: int = Query(0, ge=0),    
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
