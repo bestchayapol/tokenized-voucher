@@ -549,3 +549,94 @@ Backend logs:
 ```docker
 docker compose logs -f backend --tail=200
  ```
+
+
+## Day 7 — Tests + GitHub Actions CI + README/Demo Script
+
+Day 7 goal: add automated testing, CI pipeline, and clear demo instructions.
+
+### ✅ Checklist
+- [x] Pytest tests for main flows
+- [x] GitHub Actions CI runs tests on push
+- [x] Updated README with demo/test steps
+
+---
+
+### How to run (local or CI)
+
+1. **Start all services:**
+  ```powershell
+  docker compose up --build -d
+  ```
+
+2. **Open Swagger UI:**
+  - [http://localhost:8000/docs](http://localhost:8000/docs)
+
+3. **Run tests:**
+  ```powershell
+  docker compose exec backend pytest -q
+  ```
+
+---
+
+### Demo steps (Day 5 flows)
+
+1. **Register 3 roles:**
+  - POST `/auth/register` for:
+    - issuer: role="issuer"
+    - user1: role="user"
+    - merchant: role="merchant"
+
+2. **Login as issuer + Authorize:**
+  - POST `/auth/login` (form-data):
+    - username = issuer email
+    - password = secret
+  - Copy `access_token` → Swagger **Authorize**
+  - Confirm: GET `/auth/me` returns role "issuer"
+
+3. **Create Voucher (issuer-only):**
+  - POST `/vouchers`
+    ```json
+    { "code": "FOOD-2026", "name": "Food Voucher 2026" }
+    ```
+  - Save voucher_id from response
+
+4. **Issue to user1 (issuer → user):**
+  - POST `/vouchers/{voucher_id}/issue`
+    ```json
+    { "to_user_id": <user1_id>, "amount": 100, "ref_id": "<new-uuid>" }
+    ```
+
+5. **Login as user1 + Authorize:**
+  - POST `/auth/login` for user1 → Authorize with user1 token
+  - Confirm: GET `/auth/me` role "user"
+
+6. **Check balance (user1):**
+  - GET `/vouchers/{voucher_id}/balance/me` → should show balance 100
+
+7. **Redeem to merchant (user → merchant):**
+  - POST `/vouchers/{voucher_id}/redeem`
+    ```json
+    { "merchant_user_id": <merchant_id>, "amount": 50, "ref_id": "<new-uuid>" }
+    ```
+
+8. **Ledger (audit trail):**
+  - GET `/ledger/vouchers/{voucher_id}?limit=20&offset=0`
+  - You should see events like ISSUE and REDEEM (and TRANSFER if you tested it)
+
+9. **Idempotency test:**
+  - Send the same request again with the same ref_id → should return 409 Conflict
+
+---
+
+### CI: GitHub Actions
+
+- On every push, GitHub Actions will:
+  - Build the backend image
+  - Start services with docker compose
+  - Run all tests with pytest
+  - Fail if any test fails
+
+See `.github/workflows/` for pipeline config.
+
+

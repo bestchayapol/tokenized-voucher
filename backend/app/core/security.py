@@ -6,7 +6,7 @@ import os
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 ALGORITHM = "HS256"
 
-JWT_SECRET = os.getenv("JWT_SECRET", "change_me_now")
+JWT_SECRET = os.getenv("JWT_SECRET", "")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
 def hash_password(password: str) -> str:
